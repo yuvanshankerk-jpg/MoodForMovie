@@ -9,53 +9,133 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 # --- App Configuration ---
 st.set_page_config(
-    page_title="MoodForMovie — Interactive Cinema Discovery",
+    page_title="MoodForMovie — AI Cinema Matcher",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- Initialize Session State for Watchlist ---
+# --- Initialize Session States ---
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = []
 
-# --- Premium Cyber-Cinema Styling ---
+# Persistent filter keys for clean resetting
+if "selected_genres" not in st.session_state:
+    st.session_state.selected_genres = []
+if "selected_lang" not in st.session_state:
+    st.session_state.selected_lang = "All Languages"
+if "min_rating" not in st.session_state:
+    st.session_state.min_rating = 6.0
+if "vibe_intensity" not in st.session_state:
+    st.session_state.vibe_intensity = 75
+if "custom_query" not in st.session_state:
+    st.session_state.custom_query = ""
+if "mood_preset" not in st.session_state:
+    st.session_state.mood_preset = "Select an emotional vibe..."
+
+def clear_all_selections():
+    st.session_state.selected_genres = []
+    st.session_state.selected_lang = "All Languages"
+    st.session_state.min_rating = 6.0
+    st.session_state.vibe_intensity = 75
+    st.session_state.custom_query = ""
+    st.session_state.mood_preset = "Select an emotional vibe..."
+
+# --- ISO Language Code to Full English Names Mapping ---
+LANG_MAP = {
+    "en": "English",
+    "hi": "Hindi",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese (Mandarin)",
+    "cn": "Cantonese",
+    "ru": "Russian",
+    "pt": "Portuguese",
+    "sv": "Swedish",
+    "nl": "Dutch",
+    "da": "Danish",
+    "no": "Norwegian",
+    "fi": "Finnish",
+    "pl": "Polish",
+    "tr": "Turkish",
+    "ar": "Arabic",
+    "te": "Telugu",
+    "ta": "Tamil",
+    "th": "Thai",
+    "id": "Indonesian",
+    "el": "Greek",
+    "cs": "Czech",
+    "hu": "Hungarian",
+    "he": "Hebrew",
+    "fa": "Persian",
+    "vi": "Vietnamese"
+}
+
+# --- Vivid Neon-Cinema Theme Styling ---
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+
     .stApp {
-        background: radial-gradient(circle at 50% 10%, #1a1e29 0%, #0b0c10 80%);
-        color: #e0e6ed;
-        font-family: 'Inter', sans-serif;
+        background: radial-gradient(circle at 50% -10%, #151928 0%, #080a10 70%, #030407 100%);
+        color: #f1f5f9;
+        font-family: 'Plus Jakarta Sans', sans-serif;
     }
-    .hero-container {
+
+    /* Vivid Glowing Brand Banner */
+    .brand-container {
         text-align: center;
-        padding: 24px 0 10px 0;
+        padding: 30px 10px 15px 10px;
     }
-    .hero-title {
-        font-size: 2.8rem;
+    .brand-glow {
+        font-size: 3.4rem;
         font-weight: 800;
-        background: linear-gradient(90deg, #66fcf1, #45a29e, #e5a00d);
+        letter-spacing: -1px;
+        background: linear-gradient(135deg, #00f2fe 0%, #4facfe 35%, #f093fb 70%, #f5576c 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 4px;
+        text-shadow: 0 0 35px rgba(79, 172, 254, 0.45);
+        display: inline-block;
+        margin-bottom: 6px;
     }
+    .brand-tagline {
+        color: #94a3b8;
+        font-size: 1.1rem;
+        font-weight: 500;
+        letter-spacing: 0.3px;
+    }
+
+    /* Glassmorphic Vivid Cards */
     .movie-card {
-        background: rgba(26, 34, 46, 0.75);
-        border: 1px solid rgba(102, 252, 241, 0.2);
-        border-radius: 14px;
+        background: rgba(18, 24, 38, 0.85);
+        border: 1px solid rgba(79, 172, 254, 0.25);
+        border-radius: 16px;
         padding: 16px;
-        margin-bottom: 24px;
-        backdrop-filter: blur(10px);
-        transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        margin-bottom: 22px;
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(12px);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .movie-card:hover {
-        transform: translateY(-6px);
-        border-color: #66fcf1;
-        box-shadow: 0 8px 24px rgba(102, 252, 241, 0.25);
+        transform: translateY(-8px) scale(1.01);
+        border-color: #00f2fe;
+        box-shadow: 0 16px 36px rgba(0, 242, 254, 0.3);
+    }
+    .poster-img {
+        width: 100%;
+        border-radius: 12px;
+        height: 330px;
+        object-fit: cover;
+        margin-bottom: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
     }
     .movie-title {
         color: #ffffff;
-        font-size: 1.15rem;
+        font-size: 1.2rem;
         font-weight: 700;
         height: 48px;
         overflow: hidden;
@@ -63,27 +143,41 @@ st.markdown("""
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
+        margin-bottom: 6px;
     }
-    .rating-pill {
-        background-color: #e5a00d;
-        color: #0b0c10;
+    .score-badge {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #000;
+        font-weight: 800;
+        font-size: 0.82rem;
         padding: 3px 8px;
         border-radius: 6px;
-        font-weight: 800;
-        font-size: 0.8rem;
     }
-    .vibe-tag {
-        background: rgba(102, 252, 241, 0.15);
-        color: #66fcf1;
-        border: 1px solid rgba(102, 252, 241, 0.3);
-        padding: 2px 7px;
-        border-radius: 4px;
-        font-size: 0.72rem;
+    .lang-badge {
+        background: rgba(240, 147, 251, 0.15);
+        color: #f093fb;
+        border: 1px solid rgba(240, 147, 251, 0.35);
+        font-size: 0.75rem;
         font-weight: 600;
-        margin-right: 4px;
+        padding: 2px 8px;
+        border-radius: 5px;
+        margin-left: 6px;
     }
-    .overview-text {
+    .genre-badge {
+        background: rgba(0, 242, 254, 0.12);
+        color: #00f2fe;
+        border: 1px solid rgba(0, 242, 254, 0.3);
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 5px;
+        margin-right: 4px;
+        display: inline-block;
+        margin-top: 6px;
+    }
+    .synopsis-text {
         font-size: 0.82rem;
+        line-height: 1.45;
         color: #94a3b8;
         height: 60px;
         overflow: hidden;
@@ -91,12 +185,12 @@ st.markdown("""
         display: -webkit-box;
         -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
-        margin: 8px 0;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Load Data ---
+# --- Load Preprocessed Artifacts ---
 @st.cache_resource
 def load_data():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -110,7 +204,10 @@ def load_data():
 
 df, tfidf, tfidf_matrix = load_data()
 
-# --- Poster Fetcher via Wikipedia API ---
+# Add Full Language Name Column
+df["language_full"] = df["original_language"].map(lambda x: LANG_MAP.get(str(x).lower(), str(x).upper()))
+
+# --- Free Poster Fetcher via Wikipedia API ---
 @st.cache_data(show_spinner=False)
 def fetch_poster_wiki(title):
     headers = {"User-Agent": "MoodForMovieInteractive/2.0 (student project)"}
@@ -126,82 +223,116 @@ def fetch_poster_wiki(title):
             continue
     return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400&q=80"
 
-# --- Trailer Dialog Modal ---
+# --- Trailer Modal Dialog ---
 @st.dialog("🎬 Watch Trailer")
 def show_trailer_modal(title):
     st.write(f"### {title}")
     clean_query = urllib.parse.quote(f"{title} official trailer")
-    yt_search_embed = f"https://www.youtube.com/embed?listType=search&list={clean_query}"
-    st.components.v1.iframe(yt_search_embed, height=360, scrolling=False)
+    yt_embed = f"https://www.youtube.com/embed?listType=search&list={clean_query}"
+    st.components.v1.iframe(yt_embed, height=360, scrolling=False)
     st.caption("Auto-matched via YouTube Search")
 
-# --- Header Section ---
+# --- Vivid Header Banner ---
 st.markdown("""
-<div class="hero-container">
-    <div class="hero-title">MoodForMovie</div>
-    <p style="color:#94a3b8; font-size:1.05rem;">Dial in your exact mental state, pace, and vibe to find your next favorite film.</p>
+<div class="brand-container">
+    <div class="brand-glow">MoodForMovie</div>
+    <div class="brand-tagline">Adaptive Semantic Cinema Discovery • Powered by Natural Language Processing</div>
 </div>
 """, unsafe_allow_html=True)
 
-# --- Sidebar Controls ---
-st.sidebar.header("🎛️ Cinema Controls")
+# --- Sidebar Filters & Clear Selection ---
+st.sidebar.markdown("### 🎛️ Filter Controls")
+
+# Clear Selection Action Button
+if st.sidebar.button("🔄 Clear All Selections", use_container_width=True):
+    clear_all_selections()
+    st.rerun()
 
 all_genres = sorted(list(set(" ".join(df["genres_clean"].dropna().tolist()).split())))
-selected_genres = st.sidebar.multiselect("Include Specific Genres", options=all_genres)
+selected_genres = st.sidebar.multiselect(
+    "Genres", 
+    options=all_genres, 
+    key="selected_genres"
+)
 
-languages = sorted(df["original_language"].dropna().unique().tolist())
-selected_lang = st.sidebar.selectbox("Language Filter", options=["All"] + languages, index=0)
+# Full language options
+unique_langs = sorted(df["language_full"].dropna().unique().tolist())
+selected_lang = st.sidebar.selectbox(
+    "Language", 
+    options=["All Languages"] + unique_langs, 
+    key="selected_lang"
+)
 
-min_rating = st.sidebar.slider("Minimum IMDb/TMDb Score", 1.0, 10.0, 6.5, 0.1)
+min_rating = st.sidebar.slider(
+    "Minimum Rating (★)", 
+    1.0, 10.0, 
+    key="min_rating", 
+    step=0.1
+)
 
-# Interactive Tuning Sliders
 st.sidebar.markdown("---")
-st.sidebar.subheader("⚡ Vibe Weighting")
-vibe_intensity = st.sidebar.slider("Match Purity (Mood match vs Overall Acclaim)", 10, 100, 75, 5)
+st.sidebar.subheader("⚡ Vibe Precision")
+vibe_intensity = st.sidebar.slider(
+    "Vibe Dominance vs Global Rating", 
+    10, 100, 
+    key="vibe_intensity", 
+    step=5
+)
 
-# Watchlist Drawer in Sidebar
+# Watchlist in Sidebar
 st.sidebar.markdown("---")
 st.sidebar.subheader(f"📌 My Watchlist ({len(st.session_state.watchlist)})")
 if st.session_state.watchlist:
     for item in st.session_state.watchlist:
         st.sidebar.markdown(f"• **{item}**")
-    if st.sidebar.button("Clear Watchlist"):
+    if st.sidebar.button("Empty Watchlist", use_container_width=True):
         st.session_state.watchlist = []
         st.rerun()
 else:
-    st.sidebar.caption("No movies added yet. Click 'Add to Watchlist' on any card.")
+    st.sidebar.caption("Click 'Watchlist' on any card to pin movies here.")
 
-# --- Interactive Mood Selector ---
-col_preset, col_btn = st.columns([4, 1])
+# --- Mood Archetypes & Query Input ---
+col_preset, col_dice = st.columns([4, 1])
 
 mood_presets = {
     "Select an emotional vibe...": "",
     "🧠 Mind-Bending & Psychological": "complex psychological mystery twist mind-bending suspense thriller puzzle noir",
     "😂 Feel-Good & Comfort Comedy": "hilarious fun feel-good upbeat buddy comedy lighthearted laugh cheerful warm",
-    "💔 Melancholic & Poignant": "emotional heartbreak deep sorrow tearjerker bittersweet poignant grief drama",
+    "💔 Melancholic & Deep Emotion": "emotional heartbreak deep sorrow tearjerker bittersweet poignant grief drama",
     "⚡ High Adrenaline & Combat": "action packed intense race heist combat explosive fast paced survival martial arts",
-    "🌌 Atmospheric & Wonder": "space exploration philosophical universe quiet breathtaking sci-fi journey existential"
+    "🌌 Atmospheric Cosmic Journey": "space exploration philosophical universe quiet breathtaking sci-fi journey existential"
 }
 
-with col_preset:
-    chosen_preset = st.selectbox("Quick Mood Archetypes:", list(mood_presets.keys()), label_visibility="collapsed")
+def on_preset_change():
+    preset_choice = st.session_state.mood_preset
+    if preset_choice in mood_presets and preset_choice != "Select an emotional vibe...":
+        st.session_state.custom_query = mood_presets[preset_choice]
 
-with col_btn:
+with col_preset:
+    chosen_preset = st.selectbox(
+        "Explore Curated Emotional Archetypes:", 
+        list(mood_presets.keys()), 
+        key="mood_preset",
+        on_change=on_preset_change
+    )
+
+with col_dice:
+    st.write("") # Alignment spacing
     surprise = st.button("🎲 Surprise Me!", use_container_width=True)
 
 user_query = st.text_input(
-    "Describe your desired cinema vibe in freeform words:",
-    value=mood_presets[chosen_preset] if (chosen_preset != "Select an emotional vibe..." and not surprise) else "",
-    placeholder="e.g., A rainy night mystery with a lonely jazz detective in Tokyo"
+    "Or describe your exact vibe in natural language:",
+    key="custom_query",
+    placeholder="e.g., A rainy evening noir with a clever detective and jazz vibes in Tokyo"
 )
 
-num_movies = st.slider("Number of recommendations to render:", 3, 12, 6)
+num_movies = st.slider("Number of recommendations:", 3, 15, 6)
 
-# --- Corrected Recommendation Logic ---
+# --- Recommendation Engine ---
 def recommend(query, top_n=6, random_pick=False):
     score_df = df.copy()
 
-    # 1. Compute similarity on the FULL dataset first so array dimensions match
+    # 1. Compute similarity across the entire array
     if query.strip():
         query_vec = tfidf.transform([query])
         sim = cosine_similarity(query_vec, tfidf_matrix).flatten()
@@ -209,14 +340,14 @@ def recommend(query, top_n=6, random_pick=False):
     else:
         score_df["similarity"] = 0.0
 
-    # 2. Calculate weighted final score
+    # 2. Weighted Score
     mood_weight = vibe_intensity / 100.0
     rating_weight = 1.0 - mood_weight
     score_df["final_score"] = (score_df["similarity"] * mood_weight) + ((score_df["vote_average"] / 10.0) * rating_weight)
 
-    # 3. Apply user filters AFTER similarity assignment
-    if selected_lang != "All":
-        score_df = score_df[score_df["original_language"] == selected_lang]
+    # 3. Apply Filters
+    if selected_lang != "All Languages":
+        score_df = score_df[score_df["language_full"] == selected_lang]
 
     score_df = score_df[score_df["vote_average"] >= min_rating]
 
@@ -232,45 +363,46 @@ def recommend(query, top_n=6, random_pick=False):
 
     return score_df.sort_values(by="final_score", ascending=False).head(top_n)
 
-# --- Trigger Search ---
+# --- Results Presentation ---
 search_triggered = st.button("✨ Match My Mood", type="primary", use_container_width=True) or surprise
 
 if search_triggered:
     results = recommend(user_query, top_n=num_movies, random_pick=surprise)
 
     if results.empty:
-        st.warning("⚠️ No films match those strict filters! Try lowering the minimum rating or clearing genre constraints.")
+        st.warning("⚠️ No films found matching those constraints. Try clicking 'Clear All Selections' or lowering the minimum rating.")
     else:
-        st.markdown(f"#### 🍿 Top Matches for Your Vibe")
+        st.markdown(f"#### 🍿 Matching Films ({len(results)} found)")
         cols = st.columns(3)
 
         for idx, (_, row) in enumerate(results.iterrows()):
             col = cols[idx % 3]
             poster_url = fetch_poster_wiki(row["title"])
-            genres_sample = " • ".join(row["genres_clean"].split()[:2])
+            genres_list = row["genres_clean"].split()[:2]
 
             with col:
+                genre_html = "".join([f'<span class="genre-badge">{g}</span>' for g in genres_list])
+                
                 st.markdown(f"""
                 <div class="movie-card">
-                    <img src="{poster_url}" style="width:100%; border-radius:10px; height:310px; object-fit:cover; margin-bottom:10px;">
+                    <img class="poster-img" src="{poster_url}">
                     <div class="movie-title">{row['title']}</div>
-                    <div style="margin: 6px 0;">
-                        <span class="rating-pill">★ {row['vote_average']}/10</span>
-                        <span style="font-size:0.75rem; color:#888; margin-left:6px;">({int(row['vote_count']):,} ratings)</span>
+                    <div style="margin: 4px 0 6px 0;">
+                        <span class="score-badge">★ {row['vote_average']}/10</span>
+                        <span class="lang-badge">{row['language_full']}</span>
+                        <span style="font-size:0.75rem; color:#888; margin-left:6px;">({int(row['vote_count']):,} votes)</span>
                     </div>
-                    <div>
-                        <span class="vibe-tag">{genres_sample or "Cinema"}</span>
-                        <span class="vibe-tag">Lang: {row['original_language'].upper()}</span>
-                    </div>
-                    <div class="overview-text">{row['overview']}</div>
+                    <div>{genre_html}</div>
+                    <div class="synopsis-text">{row['overview']}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                b_col1, b_col2 = st.columns(2)
-                with b_col1:
-                    if st.button(f"▶ Trailer", key=f"trailer_{row['id']}_{idx}", use_container_width=True):
+                # Card Action Buttons
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    if st.button("▶ Trailer", key=f"trailer_{row['id']}_{idx}", use_container_width=True):
                         show_trailer_modal(row['title'])
-                with b_col2:
+                with c_btn2:
                     is_in_wl = row['title'] in st.session_state.watchlist
                     btn_label = "❤️ Saved" if is_in_wl else "➕ Watchlist"
                     if st.button(btn_label, key=f"wl_{row['id']}_{idx}", use_container_width=True):
