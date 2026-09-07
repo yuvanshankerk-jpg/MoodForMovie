@@ -197,10 +197,24 @@ user_query = st.text_input(
 
 num_movies = st.slider("Number of recommendations to render:", 3, 12, 6)
 
-# --- Recommendation Logic ---
+# --- Corrected Recommendation Logic ---
 def recommend(query, top_n=6, random_pick=False):
     score_df = df.copy()
 
+    # 1. Compute similarity on the FULL dataset first so array dimensions match
+    if query.strip():
+        query_vec = tfidf.transform([query])
+        sim = cosine_similarity(query_vec, tfidf_matrix).flatten()
+        score_df["similarity"] = sim
+    else:
+        score_df["similarity"] = 0.0
+
+    # 2. Calculate weighted final score
+    mood_weight = vibe_intensity / 100.0
+    rating_weight = 1.0 - mood_weight
+    score_df["final_score"] = (score_df["similarity"] * mood_weight) + ((score_df["vote_average"] / 10.0) * rating_weight)
+
+    # 3. Apply user filters AFTER similarity assignment
     if selected_lang != "All":
         score_df = score_df[score_df["original_language"] == selected_lang]
 
@@ -216,19 +230,6 @@ def recommend(query, top_n=6, random_pick=False):
     if random_pick:
         return score_df.sample(n=min(top_n, len(score_df)))
 
-    if not query.strip():
-        return score_df.sort_values(by="vote_average", ascending=False).head(top_n)
-
-    # NLP Semantic Cosine Match
-    query_vec = tfidf.transform([query])
-    sim = cosine_similarity(query_vec, tfidf_matrix).flatten()
-    score_df["similarity"] = sim
-
-    # Weighted scoring formula driven by sidebar slider
-    mood_weight = vibe_intensity / 100.0
-    rating_weight = 1.0 - mood_weight
-
-    score_df["final_score"] = (score_df["similarity"] * mood_weight) + ((score_df["vote_average"] / 10.0) * rating_weight)
     return score_df.sort_values(by="final_score", ascending=False).head(top_n)
 
 # --- Trigger Search ---
@@ -265,7 +266,6 @@ if search_triggered:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Interactive Action Bar per Card
                 b_col1, b_col2 = st.columns(2)
                 with b_col1:
                     if st.button(f"▶ Trailer", key=f"trailer_{row['id']}_{idx}", use_container_width=True):
